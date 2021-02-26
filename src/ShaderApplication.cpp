@@ -5,6 +5,8 @@
 #include "VertexBuffer.h"
 #include "IndexBuffer.h"
 #include "VertexArray.h"
+#include "Shader.h"
+#include "VertexBufferLayout.h"
 
 #include <iostream>
 #include <fstream>
@@ -14,91 +16,6 @@
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
-
-
-struct ShaderProgramSource
-{
-	std::string VertexSource;
-	std::string FragmentSource;
-};
-
-static ShaderProgramSource ParseShader(const std::string& filePath)
-{
-	std::ifstream stream(filePath);
-	enum class ShaderType
-	{
-		None = -1, VERTEX = 0, FRAGMENT = 1
-	};
-
-	std::stringstream ss[2];
-	std::string line;
-	ShaderType type = ShaderType::None;
-	while (getline(stream, line))
-	{
-		if (line.find("#shader") != std::string::npos)
-		{
-			if (line.find("vertex") != std::string::npos)
-				//set mode to vertex
-				type = ShaderType::VERTEX;
-			else if (line.find("fragment") != std::string::npos)
-				//set mode to fragment
-				type = ShaderType::FRAGMENT;
-		}
-		else
-		{
-			ss[(int)type] << line << '\n';
-		}
-	}
-
-
-	return{ ss[0].str(), ss[1].str() };
-}
-
-//shader
-static unsigned int CompileShader(unsigned int type, const std::string& source)
-{
-	unsigned int id = glCreateShader(type);
-	const char *src = source.c_str();
-
-	glShaderSource(id, 1, &src, nullptr);
-	glCompileShader(id);
-
-	//Error handling
-	int result;
-	glGetShaderiv(id, GL_COMPILE_STATUS, &result);
-	if (result == GL_FALSE)
-	{
-		int length;
-		glGetShaderiv(id, GL_INFO_LOG_LENGTH, &length);
-		char* message = new char(length);
-		glGetShaderInfoLog(id, length, &length, message);
-		std::cout << "Failed to compile " << 
-			(type == GL_VERTEX_SHADER ? "vertex" : "fragment") << "shader!" << std::endl;
-		std::cout << message << std::endl;
-		glDeleteShader(id);
-		return 0;
-	}
-
-	return id;
-}
-
-static int CreateShader(const std::string& vertexShader, const std::string& fragmentShader)
-{
-	unsigned int program = glCreateProgram();
-	unsigned int vs = CompileShader(GL_VERTEX_SHADER, vertexShader);
-	unsigned int fs = CompileShader(GL_FRAGMENT_SHADER, fragmentShader);
-
-	glAttachShader(program, vs);
-	glAttachShader(program, fs);
-	glLinkProgram(program);
-	glValidateProgram(program);
-
-	glDeleteShader(vs);
-	glDeleteShader(fs);
-
-	return program;
-}
-
 
 //settings
 const unsigned int SCR_WIDTH = 800;
@@ -163,24 +80,17 @@ int main()
 		layout.Push<float>(3);
 		va.AddBuffer(vb, layout);
 
-		ShaderProgramSource source = ParseShader("res\\shaders\\Basic.shader");
-		std::cout << "VERTEX" << std::endl;
-		std::cout << source.VertexSource << std::endl;
-		std::cout << "FRAGMENT" << std::endl;
-		std::cout << source.FragmentSource << std::endl;
+		//shader
+		Shader shader("res\\shaders\\Basic.shader");
+		shader.Bind();
+		shader.SetUniform4f("u_Color", 0.5f, 0.3f, 0.8f, 1.0f);
+		shader.UnBind();
 
-		unsigned int shader = CreateShader(source.VertexSource, source.FragmentSource);
-		glUseProgram(shader);
-
-		GLCall(int location = glGetUniformLocation(shader, "u_Color"));
-		ASSERT(location != -1);
-		GLCall(glUniform4f(location, 0.5f, 0.3f, 0.8f, 1.0f));
-
-		GLCall(glBindVertexArray(0));
-		GLCall(glUseProgram(0));
+		va.UnBind();
 		vb.UnBind();
 		ib.UnBind();
 
+		Render renderer;
 		float r = 0.0f;
 		float increment = 0.05f;
 		//render loop
@@ -189,31 +99,24 @@ int main()
 			//keyboard input 
 			processInput(window);
 
-			glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT);
+			renderer.Clear();
 
-			GLCall(glUseProgram(shader));			
-			GLCall(glUniform4f(location, r, 0.3f, 0.8f, 1.0f));
+			shader.Bind();
+			shader.SetUniform4f("u_Color", r, 0.3f, 0.8f, 1.0f);
+
+			renderer.Draw(va, ib, shader);
 
 			if (r > 1.0f)
 				increment = -0.05f;
 			else if (r < 0.0f)
 				increment = 0.05f;
-			r += increment;
-
-			va.Bind();
-			ib.Bind();
-			//glDrawArrays(GL_TRIANGLES, 0, 6);//0-顶点起始索引，3-顶点数量
-			GLCall(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr));
-
+			r += increment;		
 			//glfw: swap buffers and poll IO events(keys pressed/released, mouse moved etc.)
 			glfwSwapBuffers(window);
 			glfwPollEvents();
 		}
-
-		glDeleteProgram(shader);
-
 		//delete 
+		//~
 	}
 	//glfw: terminate. clearing all previously allocated GLFW resources.
 	glfwTerminate();
